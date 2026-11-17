@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daily Expense Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Styles & Libraries (CDN, Zero-Install) -->
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <!-- Application Scripts -->
+  <script defer src="js/config.js"></script>
+  <script defer src="js/state.js"></script>
+  <script defer src="js/utils/currency.js"></script>
+  <script defer src="js/utils/ocr.js"></script>
+  <script defer src="js/ui/elements.js"></script>
+  <script defer src="js/ui/render.js"></script>
+  <script defer src="js/app.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen py-6 sm:py-8 px-4">
+  <main class="max-w-3xl mx-auto space-y-5">
+    <!-- Top Header & Display Currency Switcher -->
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <div class="h-9 w-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
+            $
+          </div>
+          <div>
+            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">Daily Expense Tracker</h1>
+            <p id="header-subtitle" class="text-xs sm:text-sm text-slate-500">
+              $60.00/day carryover budget · Multi-currency &amp; smart receipt scanner
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 self-start sm:self-auto">
+        <span class="text-xs font-medium text-slate-400 hidden md:inline">Display:</span>
+        <div class="inline-flex rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200" role="group" aria-label="Display currency">
+          <button type="button" data-currency="USD" class="currency-tab px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer">
+            USD ($)
+          </button>
+          <button type="button" data-currency="EUR" class="currency-tab px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer">
+            EUR (€)
+          </button>
+          <button type="button" data-currency="INR" class="currency-tab px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer">
+            INR (₹)
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Navigation Tabs -->
+    <nav class="bg-white rounded-2xl p-1.5 shadow-sm ring-1 ring-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-1" role="tablist" aria-label="Main navigation">
+      <button
+        type="button"
+        data-tab="home"
+        class="nav-tab flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-semibold cursor-pointer"
+      >
+        <span>🏠</span>
+        <span>Home</span>
+      </button>
+      <button
+        type="button"
+        data-tab="add"
+        class="nav-tab flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-semibold cursor-pointer"
+      >
+        <span>📸</span>
+        <span>Add &amp; Scan</span>
+      </button>
+      <button
+        type="button"
+        data-tab="expenses"
+        class="nav-tab flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-semibold cursor-pointer"
+      >
+        <span>🧾</span>
+        <span>Expenses</span>
+        <span id="nav-expense-count" class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700">0</span>
+      </button>
+      <button
+        type="button"
+        data-tab="settings"
+        class="nav-tab flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-semibold cursor-pointer"
+      >
+        <span>⚙️</span>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <!-- ==========================================
+         TAB 1: HOME (BIG PICTURE OVERVIEW)
+         ========================================== -->
+    <div id="tab-home" class="space-y-5">
+      <!-- Big Picture Hero Summary Cards -->
+      <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-5 space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Big Picture Overview</h2>
+            <p id="overview-period-label" class="text-xs text-slate-500">Across 7 days ($60.00/day allowance)</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              id="go-scan-btn"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer"
+            >
+              <span>📸</span>
+              <span>Scan Receipt</span>
+            </button>
+            <button
+              id="go-manual-btn"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors cursor-pointer"
+            >
+              <span>+ Add Expense</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <!-- Total Saved / Remaining Card (Hero) -->
+          <div class="rounded-xl bg-emerald-50/70 p-4 ring-1 ring-inset ring-emerald-600/15" id="saved-card">
+            <p class="text-xs font-semibold text-emerald-700 uppercase tracking-wide" id="saved-label">Total Saved</p>
+            <p id="total-saved" class="text-2xl font-bold text-emerald-700 mt-1">$0.00</p>
+            <p id="total-saved-alt" class="text-xs text-emerald-700/80 mt-1"></p>
+          </div>
+
+          <!-- Total Spent Card -->
+          <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200/70">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total Spent</p>
+            <p id="total-spent" class="text-2xl font-bold text-slate-900 mt-1">$0.00</p>
+            <p id="total-spent-alt" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+
+          <!-- Daily Average Card -->
+          <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200/70">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Avg Per Day</p>
+            <p id="daily-average" class="text-2xl font-bold text-slate-900 mt-1">$0.00</p>
+            <p id="daily-average-alt" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+
+          <!-- Total Budget Pool Card -->
+          <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200/70">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total Budget</p>
+            <p id="total-budget" class="text-2xl font-bold text-slate-900 mt-1">$420.00</p>
+            <p id="total-budget-alt" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+        </div>
+
+        <!-- Overall Budget Progress Bar -->
+        <div class="space-y-2 pt-1">
+          <div class="flex items-center justify-between text-sm">
+            <span id="limit-status" class="font-semibold text-emerald-700">On track</span>
+            <span id="limit-percent" class="text-xs font-semibold text-slate-500">0% of budget used</span>
+          </div>
+          <div class="h-3.5 w-full rounded-full bg-slate-100 overflow-hidden p-0.5">
+            <div
+              id="limit-bar"
+              class="h-full rounded-full bg-emerald-500"
+              style="width: 0%"
+            ></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Interactive Day-by-Day Carryover Breakdown -->
+      <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+          <div>
+            <h2 class="text-sm font-bold text-slate-900">Day-by-Day Carryover Breakdown</h2>
+            <p id="daily-allowance-note" class="text-xs text-slate-500">
+              Each day adds $60.00 to your running pool. Click any row to select that day.
+            </p>
+          </div>
+          <span id="active-day-indicator" class="self-start sm:self-auto inline-flex items-center rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+            Active: Day 1
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th class="py-2.5 pr-3">Day</th>
+                <th class="py-2.5 px-3 text-right">Spent</th>
+                <th class="py-2.5 px-3 text-right">Budget Pool</th>
+                <th class="py-2.5 px-3 text-right">Running Saved</th>
+                <th class="py-2.5 pl-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="daily-table-body" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================
+         TAB 2: ADD & SCAN EXPENSE
+         ========================================== -->
+    <div id="tab-add" class="hidden space-y-5">
+      <!-- Active Day Bar -->
+      <div class="bg-indigo-50/80 ring-1 ring-indigo-500/20 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Selected Day for New Expenses:</span>
+          <select
+            id="scan-day"
+            aria-label="Selected day for adding expenses"
+            class="rounded-xl border border-indigo-300 bg-white px-3 py-1.5 text-xs font-bold text-indigo-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          ></select>
+        </div>
+        <p id="selected-day-summary" class="text-xs font-medium text-indigo-700"></p>
+      </div>
+
+      <!-- Smart Photo & Screenshot Scanner -->
+      <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Scan a Receipt Photo or Payment Screenshot</h2>
+            <p class="text-xs text-slate-500">
+              Auto-detects merchant, amount &amp; currency ($, €, ₹). Supports dark-mode payment apps &amp; paper receipts.
+            </p>
+          </div>
+          <label class="inline-flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer select-none shrink-0">
+            <input
+              id="auto-add-toggle"
+              type="checkbox"
+              class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span>Auto-add without review</span>
+          </label>
+        </div>
+
+        <!-- Upload / Drag & Drop / Paste Zone -->
+        <label
+          id="scan-dropzone"
+          for="screenshot-input"
+          class="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 px-4 py-6 text-center hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors cursor-pointer"
+        >
+          <div class="h-10 w-10 rounded-full bg-indigo-100/80 text-indigo-600 flex items-center justify-center text-lg mb-2">
+            📷
+          </div>
+          <span class="text-sm font-semibold text-indigo-600">
+            Choose a photo/screenshot, drag &amp; drop here, or press <kbd class="rounded bg-white px-1.5 py-0.5 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-300">Ctrl+V</kbd>
+          </span>
+          <span class="text-xs text-slate-400 mt-1">
+            PNG, JPG, WebP, or mobile camera photo — processed 100% locally in your browser
+          </span>
+          <input id="screenshot-input" type="file" accept="image/*" class="sr-only" />
+        </label>
+
+        <!-- Live OCR Progress Bar -->
+        <div id="ocr-progress-wrap" class="hidden space-y-1.5 rounded-xl bg-indigo-50/70 p-3.5 ring-1 ring-indigo-500/15">
+          <div class="flex items-center justify-between text-xs font-semibold text-indigo-700">
+            <span id="ocr-progress-label">Reading receipt...</span>
+            <span id="ocr-progress-pct">0%</span>
+          </div>
+          <div class="h-2 w-full rounded-full bg-indigo-100 overflow-hidden">
+            <div id="ocr-progress-bar" class="h-full rounded-full bg-indigo-600" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Status Feedback Banner -->
+        <div id="scan-feedback" class="hidden rounded-xl p-3 text-xs font-medium"></div>
+
+        <!-- Review & Confirm Scanned Expense Card -->
+        <div id="scan-review-card" class="hidden rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 space-y-4">
+          <div class="flex items-start gap-3">
+            <button
+              id="scan-preview-btn"
+              type="button"
+              title="Click to view full image"
+              class="group relative shrink-0 rounded-xl overflow-hidden ring-1 ring-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <img id="scan-preview" alt="Uploaded receipt preview" class="h-16 w-16 object-cover" />
+              <span class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[10px] font-bold text-white transition-opacity">
+                Zoom
+              </span>
+            </button>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-bold uppercase tracking-wide text-indigo-700">Review Scanned Details</h3>
+                <span class="text-[11px] text-slate-400">Click image to enlarge</span>
+              </div>
+              <p id="scan-detected-text" class="text-xs font-medium text-slate-700 mt-0.5"></p>
+              <p id="scan-raw-snippet" class="text-[11px] text-slate-400 truncate mt-0.5"></p>
+            </div>
+          </div>
+
+          <!-- Clickable Candidate Amount Chips -->
+          <div id="scan-candidates-wrap" class="hidden space-y-1.5">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Amounts found on receipt (click to use):
+            </p>
+            <div id="scan-candidates-list" class="flex flex-wrap gap-1.5"></div>
+          </div>
+
+          <!-- Editable Fields before Confirming -->
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+            <div class="sm:col-span-5">
+              <label for="scan-edit-name" class="block text-[11px] font-semibold text-slate-600 mb-1">Merchant / Item</label>
+              <input
+                id="scan-edit-name"
+                type="text"
+                placeholder="Receipt item name"
+                class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </div>
+            <div class="sm:col-span-3">
+              <label for="scan-edit-day" class="block text-[11px] font-semibold text-slate-600 mb-1">Day</label>
+              <select
+                id="scan-edit-day"
+                class="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-sm font-medium text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              ></select>
+            </div>
+            <div class="sm:col-span-4">
+              <label for="scan-edit-amount" class="block text-[11px] font-semibold text-slate-600 mb-1">Receipt Amount</label>
+              <div class="flex">
+                <select
+                  id="scan-edit-currency"
+                  class="rounded-l-xl border border-r-0 border-slate-300 bg-slate-100 px-2.5 py-2 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="INR">INR (₹)</option>
+                </select>
+                <input
+                  id="scan-edit-amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="0.00"
+                  class="w-full min-w-0 rounded-r-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+            <p id="scan-conversion-preview" class="text-xs font-medium text-slate-500"></p>
+            <div class="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                id="scan-cancel-btn"
+                type="button"
+                class="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Discard
+              </button>
+              <button
+                id="scan-confirm-btn"
+                type="button"
+                class="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors cursor-pointer"
+              >
+                ✓ Confirm &amp; Add Expense
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Manual Expense Form -->
+      <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-5 space-y-3">
+        <div>
+          <h2 class="text-base font-bold text-slate-900">Add an Expense Manually</h2>
+          <p class="text-xs text-slate-500">Enter in any currency — automatically converts and saves original receipt currency.</p>
+        </div>
+
+        <form id="expense-form" class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+          <input
+            id="expense-name"
+            type="text"
+            placeholder="What did you buy? (e.g. Metro ticket, Dinner)"
+            required
+            class="sm:col-span-5 rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          />
+          <select
+            id="expense-day"
+            aria-label="Day number"
+            class="sm:col-span-2 rounded-xl border border-slate-300 bg-white px-2.5 py-2.5 text-sm font-medium text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          ></select>
+          <div class="sm:col-span-3 flex">
+            <select
+              id="expense-currency"
+              aria-label="Expense currency"
+              class="rounded-l-xl border border-r-0 border-slate-300 bg-slate-50 px-2.5 py-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="USD">$</option>
+              <option value="EUR">€</option>
+              <option value="INR">₹</option>
+            </select>
+            <input
+              id="expense-amount"
+              type="number"
+              step="0.01"
+              min="0.01"
+              placeholder="0.00"
+              required
+              class="w-full min-w-0 rounded-r-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
+          </div>
+          <button
+            type="submit"
+            class="sm:col-span-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 active:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            Add
+          </button>
+        </form>
+        <p id="manual-conversion-preview" class="hidden text-xs text-slate-500"></p>
+        <p id="form-error" class="hidden text-xs font-medium text-rose-600"></p>
+      </section>
+
+      <!-- Recent Expenses Mini-Preview -->
+      <section id="recent-expenses-card" class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-5">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs font-bold uppercase tracking-wide text-slate-500">Recently Added</h3>
+          <button
+            id="view-all-expenses-btn"
+            type="button"
+            class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 cursor-pointer"
+          >
+            View all (<span id="recent-total-count">0</span>) →
+          </button>
+        </div>
+        <ul id="recent-expense-list" class="divide-y divide-slate-100 text-sm"></ul>
+      </section>
+    </div>
+
+    <!-- ==========================================
+         TAB 3: EXPENSES LIST & FILTERS
+         ========================================== -->
+    <div id="tab-expenses" class="hidden space-y-5">
+      <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">
+              Recorded Expenses (<span id="expense-count">0</span>)
+            </h2>
+            <p id="filtered-total-label" class="text-xs text-slate-500"></p>
+          </div>
+
+          <!-- Safe Clear All Controls -->
+          <div class="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              id="clear-all-btn"
+              type="button"
+              class="text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors cursor-pointer"
+            >
+              Clear all
+            </button>
+            <div id="clear-confirm-group" class="hidden flex items-center gap-1.5 rounded-xl bg-rose-50 px-2.5 py-1 ring-1 ring-rose-200">
+              <span class="text-xs font-semibold text-rose-700">Delete all?</span>
+              <button
+                id="clear-confirm-yes"
+                type="button"
+                class="rounded-lg bg-rose-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-rose-500 cursor-pointer"
+              >
+                Yes, clear
+              </button>
+              <button
+                id="clear-confirm-no"
+                type="button"
+                class="rounded-lg bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 ring-1 ring-slate-200 cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Day Filter Pills -->
+        <div id="day-filter-bar" class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar"></div>
+
+        <!-- Expense Items List -->
+        <ul id="expense-list" class="divide-y divide-slate-100"></ul>
+
+        <div id="empty-state" class="hidden text-center py-8 space-y-2">
+          <p class="text-sm font-medium text-slate-500">No expenses recorded for this view.</p>
+          <p class="text-xs text-slate-400">Unused daily budget carries over automatically!</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================
+         TAB 4: SETTINGS
+         ========================================== -->
+    <div id="tab-settings" class="hidden space-y-5">
+      <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-5 space-y-5">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Budget &amp; Currency Settings</h2>
+            <p class="text-xs text-slate-500">Customize your daily allowance, trip duration, and live exchange rates.</p>
+          </div>
+          <button
+            id="reset-settings-btn"
+            type="button"
+            class="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            Reset defaults
+          </button>
+        </div>
+
+        <!-- Daily Budget Allowance -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <label for="daily-limit-input" class="block text-sm font-semibold text-slate-800">Daily Budget Allowance (USD)</label>
+            <p id="daily-limit-equiv" class="text-xs text-slate-500">Default is $60.00/day. Unused budget carries over each day.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-500">$</span>
+            <input
+              id="daily-limit-input"
+              type="number"
+              min="1"
+              max="100000"
+              step="1"
+              value="60"
+              class="w-28 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 text-right focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
+            <span class="text-sm text-slate-500">/ day</span>
+          </div>
+        </div>
+
+        <!-- Number of Days -->
+        <div class="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <label for="days-input" class="block text-sm font-semibold text-slate-800">Number of Days</label>
+            <p class="text-xs text-slate-500">Total duration of your budget period (1 to 365 days).</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              id="days-input"
+              type="number"
+              min="1"
+              max="365"
+              value="7"
+              class="w-28 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 text-center focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
+            <span class="text-sm text-slate-500">days</span>
+          </div>
+        </div>
+
+        <!-- Exchange Rates -->
+        <div class="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <span class="block text-sm font-semibold text-slate-800">Exchange Rates (per 1 USD)</span>
+            <p class="text-xs text-slate-500">Adjust anytime to match your bank or card rate.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 px-3 py-2 rounded-xl ring-1 ring-slate-200">
+              <span>EUR (€)</span>
+              <input
+                id="rate-eur"
+                type="number"
+                step="0.0001"
+                min="0.01"
+                value="0.9084"
+                class="w-24 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-900 text-right focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </label>
+            <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 px-3 py-2 rounded-xl ring-1 ring-slate-200">
+              <span>INR (₹)</span>
+              <input
+                id="rate-inr"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value="93.48"
+                class="w-24 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-900 text-right focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </label>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Full-Size Receipt Image Modal -->
+  <div
+    id="image-modal"
+    class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Receipt image preview"
+  >
+    <div class="relative max-w-xl w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <span class="text-xs font-bold uppercase tracking-wide text-slate-600">Receipt / Screenshot Preview</span>
+        <button
+          id="close-modal-btn"
+          type="button"
+          class="rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+        >
+          ✕ Close
+        </button>
+      </div>
+      <div class="p-4 max-h-[80vh] overflow-auto flex justify-center bg-slate-950/5">
+        <img id="modal-image" alt="Full size receipt" class="max-w-full h-auto rounded-lg" />
+      </div>
+    </div>
+  </div>
+</body>
+</html>
