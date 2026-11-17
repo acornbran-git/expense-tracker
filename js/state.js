@@ -21,7 +21,10 @@ window.App = window.App || {};
       amountUsd,
       originalAmount: origAmt,
       originalCurrency: origCur,
-      source: exp.source === 'scan' ? 'scan' : 'manual'
+      source: exp.source === 'scan' ? 'scan' : 'manual',
+      receiptDriveUrl: exp.receiptDriveUrl ? String(exp.receiptDriveUrl) : '',
+      receiptDriveId: exp.receiptDriveId ? String(exp.receiptDriveId) : '',
+      receiptUploadStatus: exp.receiptUploadStatus || ''
     };
   }
 
@@ -51,6 +54,13 @@ window.App = window.App || {};
         displayCurrency: SUPPORTED_CURRENCIES.includes(parsed.displayCurrency)
           ? parsed.displayCurrency
           : 'USD',
+        receiptGeneration: parsed.receiptGeneration || 'initial',
+        driveClientId: typeof parsed.driveClientId === 'string' ? parsed.driveClientId.trim() : '',
+        driveFolderName:
+          typeof parsed.driveFolderName === 'string' && parsed.driveFolderName.trim()
+            ? parsed.driveFolderName.trim()
+            : 'Expense Tracker Receipts',
+        driveAutoUpload: parsed.driveAutoUpload !== undefined ? Boolean(parsed.driveAutoUpload) : true,
         rates: {
           USD: 1,
           EUR: parseFloat(parsed.rates?.EUR) > 0 ? parseFloat(parsed.rates.EUR) : DEFAULT_STATE.rates.EUR,
@@ -84,6 +94,53 @@ window.App = window.App || {};
   }
 
   App.State = {
+    exportBackup() {
+      const { driveClientId, driveFolderName, driveAutoUpload, receiptGeneration, ...data } = currentState;
+      return { app: 'expense-tracker', version: 1, savedAt: new Date().toISOString(), data };
+    },
+
+    validateBackup(backup) {
+      const data = backup?.data;
+      if (backup?.app !== 'expense-tracker' || backup.version !== 1 || !data ||
+          !Number.isInteger(data.days) || data.days < 1 || data.days > 365 ||
+          !Number.isFinite(data.dailyLimitUsd) || data.dailyLimitUsd <= 0 ||
+          !SUPPORTED_CURRENCIES.includes(data.displayCurrency) ||
+          !Number.isFinite(data.rates?.EUR) || data.rates.EUR <= 0 ||
+          !Number.isFinite(data.rates?.INR) || data.rates.INR <= 0 ||
+          !Array.isArray(data.expenses)) throw new Error('Invalid expense tracker backup.');
+      const ids = new Set();
+      for (const expense of data.expenses) {
+        if (!Number.isInteger(expense.id) || expense.id < 1 || ids.has(expense.id) ||
+            !Number.isInteger(expense.day) || expense.day < 1 || expense.day > data.days ||
+            typeof expense.name !== 'string' || !Number.isFinite(expense.amountUsd) || expense.amountUsd <= 0 ||
+            !Number.isFinite(expense.originalAmount) || expense.originalAmount <= 0 ||
+            !SUPPORTED_CURRENCIES.includes(expense.originalCurrency) ||
+            (expense.receiptDriveUrl && !/^https:\/\/drive\.google\.com\//.test(expense.receiptDriveUrl))) {
+          throw new Error('Backup contains invalid expenses.');
+        }
+        ids.add(expense.id);
+      }
+      return data;
+    },
+
+    restoreBackup(backup) {
+      const data = this.validateBackup(backup);
+      const restored = {
+        ...currentState, receiptGeneration: String(Date.now()) + Math.random(), days: data.days, selectedDay: 1, expenseFilterDay: 'all',
+        dailyLimitUsd: data.dailyLimitUsd, displayCurrency: data.displayCurrency,
+        rates: { USD: 1, EUR: data.rates.EUR, INR: data.rates.INR },
+        autoAddScan: Boolean(data.autoAddScan),
+        expenses: data.expenses.map((e, i) => normalizeExpense({ ...e,
+          receiptUploadStatus: e.receiptDriveUrl ? 'uploaded' : '' }, i + 1)),
+        nextId: data.expenses.reduce((max, e) => Math.max(max, e.id), 0) + 1
+      };
+      // Do not replace the live state unless the complete backup was persisted.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      currentState = restored;
+      uiState.pendingScan = null;
+      uiState.editingExpenseId = null;
+    },
+
     get() {
       return currentState;
     },
@@ -161,6 +218,19 @@ window.App = window.App || {};
       return false;
     },
 
+    setDriveSettings({ clientId, folderName, autoUpload }) {
+      if (clientId !== undefined) {
+        currentState.driveClientId = String(clientId).trim();
+      }
+      if (folderName !== undefined) {
+        currentState.driveFolderName = String(folderName).trim() || 'Expense Tracker Receipts';
+      }
+      if (autoUpload !== undefined) {
+        currentState.driveAutoUpload = Boolean(autoUpload);
+      }
+      saveState();
+    },
+
     resetSettings() {
       currentState.dailyLimitUsd = DEFAULT_DAILY_LIMIT_USD;
       currentState.days = DEFAULT_STATE.days;
@@ -171,7 +241,7 @@ window.App = window.App || {};
       saveState();
     },
 
-    addExpense({ day, name, amountUsd, originalAmount, originalCurrency, source }) {
+    addExpense({ day, name, amountUsd, originalAmount, originalCurrency, source, receiptDriveUrl, receiptDriveId, receiptUploadStatus }) {
       const validDay = Math.min(currentState.days, Math.max(1, parseInt(day, 10) || 1));
       const newExpense = normalizeExpense(
         {
@@ -181,13 +251,33 @@ window.App = window.App || {};
           amountUsd,
           originalAmount: originalAmount ?? amountUsd,
           originalCurrency: originalCurrency || 'USD',
-          source: source || 'manual'
+          source: source || 'manual',
+          receiptDriveUrl: receiptDriveUrl || '',
+          receiptDriveId: receiptDriveId || '',
+          receiptUploadStatus: receiptUploadStatus || ''
         },
         currentState.nextId
       );
       currentState.expenses.unshift(newExpense);
       saveState();
       return newExpense;
+    },
+
+    updateExpenseReceipt(id, { receiptDriveUrl, receiptDriveId, receiptUploadStatus }) {
+      const idx = currentState.expenses.findIndex((e) => e.id === id);
+      if (idx === -1) return false;
+      const existing = currentState.expenses[idx];
+      currentState.expenses[idx] = normalizeExpense(
+        {
+          ...existing,
+          receiptDriveUrl: receiptDriveUrl ?? existing.receiptDriveUrl,
+          receiptDriveId: receiptDriveId ?? existing.receiptDriveId,
+          receiptUploadStatus: receiptUploadStatus ?? existing.receiptUploadStatus
+        },
+        existing.id
+      );
+      saveState();
+      return true;
     },
 
     updateExpense(id, { day, name, amountUsd, originalAmount, originalCurrency }) {
@@ -219,6 +309,7 @@ window.App = window.App || {};
     },
 
     clearExpenses() {
+      currentState.receiptGeneration = String(Date.now()) + Math.random();
       currentState.expenses = [];
       uiState.editingExpenseId = null;
       uiState.confirmingClearAll = false;

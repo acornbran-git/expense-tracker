@@ -320,6 +320,23 @@ window.App = window.App || {};
     populateDaySelect(el.expenseDaySelect, state.days, state.selectedDay);
     el.autoAddToggle.checked = Boolean(state.autoAddScan);
 
+    const driveReady = Boolean(App.Drive?.isConnected() && state.driveAutoUpload);
+    if (el.driveScanStatusBtn && el.driveScanStatusText) {
+      if (driveReady) {
+        el.driveScanStatusBtn.className =
+          'inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20 hover:bg-emerald-100 transition-colors cursor-pointer';
+        el.driveScanStatusText.textContent = 'Receipt uploads: On';
+      } else if (App.Drive?.isConnected() && !state.driveAutoUpload) {
+        el.driveScanStatusBtn.className =
+          'inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-500/20 hover:bg-amber-100 transition-colors cursor-pointer';
+        el.driveScanStatusText.textContent = 'Receipt uploads: Paused';
+      } else {
+        el.driveScanStatusBtn.className =
+          'inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer';
+        el.driveScanStatusText.textContent = 'Connect Google Drive';
+      }
+    }
+
     const activeDayStat = dailyStats[state.selectedDay - 1];
     if (activeDayStat) {
       el.selectedDaySummary.textContent = `Day ${state.selectedDay} Spent: ${formatMoney(activeDayStat.spentTodayUsd, cur)} · Running Balance: ${formatMoney(activeDayStat.runningSavedUsd, cur)}`;
@@ -342,11 +359,18 @@ window.App = window.App || {};
           item.originalCurrency && item.originalCurrency !== cur
             ? `<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">Orig: ${formatRawCurrency(item.originalAmount, item.originalCurrency)}</span>`
             : '';
+        let driveBadgeHtml = '';
+        if (item.receiptDriveUrl) {
+          driveBadgeHtml = `<a href="${escapeHtml(item.receiptDriveUrl)}" target="_blank" rel="noopener noreferrer" class="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100">☁️ Drive ↗</a>`;
+        } else if (['uploading', 'queued'].includes(item.receiptUploadStatus)) {
+          driveBadgeHtml = `<span class="shrink-0 rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">⏳ Pending upload</span>`;
+        }
         li.innerHTML = `
           <div class="flex items-center gap-2 min-w-0">
             <span class="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Day ${item.day}</span>
             <span class="text-sm font-medium text-slate-800 truncate">${escapeHtml(item.name)}</span>
             ${item.source === 'scan' ? '<span class="text-[11px] text-indigo-600 font-semibold">📸</span>' : ''}
+            ${driveBadgeHtml}
           </div>
           <div class="flex items-center gap-2 shrink-0">
             ${origBadge}
@@ -375,6 +399,29 @@ window.App = window.App || {};
     if (document.activeElement !== el.rateInrInput) {
       el.rateInrInput.value = String(state.rates.INR);
     }
+
+    if (el.driveAutoUploadToggle) {
+      el.driveAutoUploadToggle.checked = Boolean(state.driveAutoUpload);
+    }
+    if (el.driveClientInput && document.activeElement !== el.driveClientInput) {
+      el.driveClientInput.value = state.driveClientId || '';
+    }
+    if (el.driveFolderInput && document.activeElement !== el.driveFolderInput) {
+      el.driveFolderInput.value = state.driveFolderName || 'Expense Tracker Receipts';
+    }
+    if (el.driveSettingsBadge) {
+      if (App.Drive?.isConnected() && state.driveAutoUpload) {
+        el.driveSettingsBadge.className = 'rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800';
+        el.driveSettingsBadge.textContent = 'Active';
+      } else if (App.Drive?.isConnected()) {
+        el.driveSettingsBadge.className = 'rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800';
+        el.driveSettingsBadge.textContent = 'Paused';
+      } else {
+        el.driveSettingsBadge.className = 'rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-600';
+        el.driveSettingsBadge.textContent = 'Not Configured';
+      }
+    }
+
   }
 
   function renderExpensesTab(state, ui, cur) {
@@ -564,6 +611,27 @@ window.App = window.App || {};
         nameLine.appendChild(scanBadge);
       }
 
+      if (item.receiptDriveUrl) {
+        const driveLink = document.createElement('a');
+        driveLink.href = item.receiptDriveUrl;
+        driveLink.target = '_blank';
+        driveLink.rel = 'noopener noreferrer';
+        driveLink.className =
+          'shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20 hover:bg-emerald-100 transition-colors';
+        driveLink.textContent = '☁️ View Receipt ↗';
+        nameLine.appendChild(driveLink);
+      } else if (['uploading', 'queued'].includes(item.receiptUploadStatus)) {
+        const uploadingBadge = document.createElement('span');
+        uploadingBadge.className = 'shrink-0 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600';
+        uploadingBadge.textContent = '⏳ Pending Drive upload';
+        nameLine.appendChild(uploadingBadge);
+      } else if (item.receiptUploadStatus === 'failed') {
+        const failedBadge = document.createElement('span');
+        failedBadge.className = 'shrink-0 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-600';
+        failedBadge.textContent = '⚠️ Drive upload failed';
+        nameLine.appendChild(failedBadge);
+      }
+
       nameWrap.appendChild(nameLine);
       leftWrap.appendChild(dayBadge);
       leftWrap.appendChild(nameWrap);
@@ -623,9 +691,40 @@ window.App = window.App || {};
       .replace(/"/g, '&quot;');
   }
 
+  function showDriveTestFeedback(type, message) {
+    const { driveTestFeedback } = App.Elements;
+    if (!driveTestFeedback) return;
+    if (!message) {
+      driveTestFeedback.classList.add('hidden');
+      return;
+    }
+    driveTestFeedback.classList.remove(
+      'hidden',
+      'bg-indigo-50',
+      'text-indigo-700',
+      'bg-emerald-50',
+      'text-emerald-700',
+      'bg-amber-50',
+      'text-amber-800',
+      'bg-rose-50',
+      'text-rose-700'
+    );
+    if (type === 'loading') {
+      driveTestFeedback.classList.add('bg-indigo-50', 'text-indigo-700');
+    } else if (type === 'success') {
+      driveTestFeedback.classList.add('bg-emerald-50', 'text-emerald-700');
+    } else if (type === 'warning') {
+      driveTestFeedback.classList.add('bg-amber-50', 'text-amber-800');
+    } else {
+      driveTestFeedback.classList.add('bg-rose-50', 'text-rose-700');
+    }
+    driveTestFeedback.textContent = message;
+  }
+
   App.Render = {
     render,
     showScanFeedback,
+    showDriveTestFeedback,
     updateOcrProgress,
     updateScanConversionPreview,
     updateManualConversionPreview,

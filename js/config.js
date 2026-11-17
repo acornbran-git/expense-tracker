@@ -18,6 +18,9 @@ window.App.Config = {
     dailyLimitUsd: 60,
     days: 7,
     displayCurrency: 'USD',
+    driveClientId: '',
+    driveFolderName: 'Expense Tracker Receipts',
+    driveAutoUpload: true,
     rates: {
       USD: 1,
       EUR: 0.9084,

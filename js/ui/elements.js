@@ -44,6 +44,8 @@ window.App = window.App || {};
     // Add & Scan Tab
     scanDaySelect: document.getElementById('scan-day'),
     selectedDaySummary: document.getElementById('selected-day-summary'),
+    driveScanStatusBtn: document.getElementById('drive-scan-status-btn'),
+    driveScanStatusText: document.getElementById('drive-scan-status-text'),
     autoAddToggle: document.getElementById('auto-add-toggle'),
     scanDropzone: document.getElementById('scan-dropzone'),
     screenshotInput: document.getElementById('screenshot-input'),
@@ -103,6 +105,13 @@ window.App = window.App || {};
     rateEurInput: document.getElementById('rate-eur'),
     rateInrInput: document.getElementById('rate-inr'),
     resetSettingsBtn: document.getElementById('reset-settings-btn'),
+
+    driveSettingsBadge: document.getElementById('drive-settings-badge'),
+    driveAutoUploadToggle: document.getElementById('drive-auto-upload-toggle'),
+    driveClientInput: document.getElementById('drive-client-input'),
+    driveFolderInput: document.getElementById('drive-folder-input'),
+    driveTestBtn: document.getElementById('drive-test-btn'),
+    driveTestFeedback: document.getElementById('drive-test-feedback'),
 
     // Image Preview Modal
     imageModal: document.getElementById('image-modal'),

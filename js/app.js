@@ -6,11 +6,23 @@ window.App = window.App || {};
   const {
     render,
     showScanFeedback,
+    showDriveTestFeedback,
     updateOcrProgress,
     updateScanConversionPreview,
     updateManualConversionPreview
   } = App.Render;
   const el = App.Elements;
+
+  async function maybeUploadReceiptToDrive(file, expense) {
+    if (!file || !App.State.get().driveAutoUpload) return;
+    try {
+      if (file.size > 5 * 1024 * 1024) throw new Error('Receipt image is larger than 5 MB. Use a smaller image for Drive storage.');
+      await App.Drive.saveReceipt(file, expense);
+    } catch (error) {
+      showScanFeedback('warning', 'Expense saved. Receipt upload pending or unavailable: ' + error.message);
+    }
+    render();
+  }
 
   async function processUploadedImage(file) {
     if (!file || !file.type.startsWith('image/')) {
@@ -45,7 +57,7 @@ window.App = window.App || {};
       // If auto-add is enabled AND a clear amount was found, add immediately
       if (state.autoAddScan && parsed.amount && parsed.amount > 0) {
         const amountUsd = toUsd(parsed.amount, parsed.currency);
-        App.State.addExpense({
+        const createdExpense = App.State.addExpense({
           day: targetDay,
           name: parsed.label,
           amountUsd,
@@ -56,17 +68,21 @@ window.App = window.App || {};
 
         const detectedStr = formatRawCurrency(parsed.amount, parsed.currency);
         const convertedStr = formatMoney(amountUsd, App.State.get().displayCurrency);
+        const driveSuffix =
+          state.driveAutoUpload ? ' · Saving receipt for Drive upload...' : '';
         showScanFeedback(
           'success',
-          `Auto-added "${parsed.label}" (${detectedStr} → ${convertedStr}) to Day ${targetDay}!`
+          `Auto-added "${parsed.label}" (${detectedStr} → ${convertedStr}) to Day ${targetDay}!${driveSuffix}`
         );
         render();
+        maybeUploadReceiptToDrive(file, createdExpense);
         return;
       }
 
       // Otherwise open the Review & Confirm card so user can verify or pick from candidate chips
       const hasAmount = parsed.amount && parsed.amount > 0;
       App.State.setPendingScan({
+        file,
         previewUrl,
         fileName: file.name || 'Pasted screenshot',
         rawSnippet: snippet ? `OCR text: "${snippet}"` : file.name,
@@ -97,6 +113,7 @@ window.App = window.App || {};
     } catch (err) {
       updateOcrProgress(null);
       App.State.setPendingScan({
+        file,
         previewUrl,
         fileName: file.name || 'Receipt image',
         rawSnippet: file.name || '',
@@ -247,6 +264,8 @@ window.App = window.App || {};
 
     el.scanConfirmBtn.addEventListener('click', () => {
       const state = App.State.get();
+      const pending = App.State.getUI().pendingScan;
+      const pendingFile = pending?.file || null;
       const name = el.scanEditName.value.trim() || 'Scanned Receipt';
       const day = Math.min(state.days, Math.max(1, parseInt(el.scanEditDay.value, 10) || state.selectedDay));
       const entryCurrency = el.scanEditCurrency.value;
@@ -259,7 +278,7 @@ window.App = window.App || {};
       }
 
       const amountUsd = toUsd(rawAmount, entryCurrency);
-      App.State.addExpense({
+      const createdExpense = App.State.addExpense({
         day,
         name,
         amountUsd,
@@ -270,11 +289,19 @@ window.App = window.App || {};
 
       App.State.setPendingScan(null);
       const cur = App.State.get().displayCurrency;
+      const driveSuffix =
+        pendingFile && state.driveAutoUpload
+          ? ' · Saving receipt for Drive upload...'
+          : '';
       showScanFeedback(
         'success',
-        `Added "${name}" (${formatRawCurrency(rawAmount, entryCurrency)} → ${formatMoney(amountUsd, cur)}) to Day ${day}!`
+        `Added "${name}" (${formatRawCurrency(rawAmount, entryCurrency)} → ${formatMoney(amountUsd, cur)}) to Day ${day}!${driveSuffix}`
       );
       render();
+
+      if (pendingFile) {
+        maybeUploadReceiptToDrive(pendingFile, createdExpense);
+      }
     });
 
     el.scanCancelBtn.addEventListener('click', () => {
@@ -390,9 +417,90 @@ window.App = window.App || {};
       App.State.resetSettings();
       render();
     });
+
+    // Google Drive operations require an explicit user action.
+    let driveBusy = false;
+    async function driveAction(action) {
+      if (driveBusy) return;
+      driveBusy = true;
+      const buttons = ['drive-test-btn', 'drive-disconnect-btn', 'drive-upload-btn', 'drive-backup-btn', 'drive-restore-btn', 'drive-recover-btn'];
+      buttons.forEach(id => document.getElementById(id).disabled = true);
+      showDriveTestFeedback('loading', 'Working with Google Drive…');
+      try { await action(); }
+      catch (error) { showDriveTestFeedback('error', error.message); }
+      finally {
+        driveBusy = false;
+        buttons.forEach(id => document.getElementById(id).disabled = false);
+        render();
+      }
+    }
+    el.driveScanStatusBtn?.addEventListener('click', () => {
+      App.State.setActiveTab('settings'); render(); el.driveClientInput.focus();
+    });
+    el.driveAutoUploadToggle.addEventListener('change', () => {
+      App.State.setDriveSettings({ autoUpload: el.driveAutoUploadToggle.checked }); render();
+    });
+    el.driveClientInput.addEventListener('change', () => {
+      App.Drive.disconnect();
+      App.State.setDriveSettings({ clientId: el.driveClientInput.value.trim() }); render();
+    });
+    el.driveFolderInput.addEventListener('change', () => {
+      App.State.setDriveSettings({ folderName: el.driveFolderInput.value.trim() });
+    });
+    el.driveTestBtn.addEventListener('click', () => driveAction(async () => {
+      App.State.setDriveSettings({ clientId: el.driveClientInput.value.trim() });
+      await App.Drive.connect();
+      showDriveTestFeedback('success', 'Connected. Pending receipts will upload to the Google account you selected when you choose Upload pending receipts.');
+    }));
+    document.getElementById('drive-disconnect-btn').addEventListener('click', () => {
+      App.Drive.disconnect(); render();
+      showDriveTestFeedback('success', 'Disconnected on this device. You can revoke the app’s permission in your Google Account settings.');
+    });
+    document.getElementById('drive-upload-btn').addEventListener('click', () => driveAction(async () => {
+      const count = await App.Drive.flushReceipts();
+      showDriveTestFeedback('success', count + ' pending receipts uploaded.');
+    }));
+    document.getElementById('drive-backup-btn').addEventListener('click', () => driveAction(async () => {
+      await App.Drive.backup();
+      showDriveTestFeedback('success', 'Dated expense backup saved to Google Drive. Receipt images upload separately.');
+    }));
+    document.getElementById('drive-restore-btn').addEventListener('click', () => driveAction(async () => {
+      const backup = await App.Drive.latestBackup();
+      if (!window.confirm('Replace this device’s expenses and budget settings with the latest Drive backup (' + backup.data.expenses.length + ' expenses, saved ' + backup.savedAt + ')? A local recovery copy will be saved first.')) {
+        showDriveTestFeedback('warning', 'Restore cancelled.'); return;
+      }
+      localStorage.setItem('expense_tracker_before_restore', JSON.stringify(App.State.exportBackup()));
+      App.State.restoreBackup(backup);
+      showDriveTestFeedback('success', 'Backup restored. Your Google connection settings were kept.');
+    }));
+    document.getElementById('drive-recover-btn').addEventListener('click', () => driveAction(async () => {
+      const recovery = localStorage.getItem('expense_tracker_before_restore');
+      if (!recovery) throw new Error('No pre-restore recovery copy is saved yet.');
+      const backup = JSON.parse(recovery);
+      App.State.validateBackup(backup);
+      if (!window.confirm('Replace current expenses and budget settings with the local pre-restore recovery copy?')) {
+        showDriveTestFeedback('warning', 'Recovery cancelled.'); return;
+      }
+      const current = JSON.stringify(App.State.exportBackup());
+      App.State.restoreBackup(backup);
+      localStorage.setItem('expense_tracker_before_restore', current);
+      showDriveTestFeedback('success', 'Local recovery copy restored.');
+    }));
+    document.getElementById('drive-recovery-btn').addEventListener('click', () => {
+      const recovery = localStorage.getItem('expense_tracker_before_restore');
+      if (!recovery) { showDriveTestFeedback('warning', 'No pre-restore recovery copy is saved yet.'); return; }
+      const url = URL.createObjectURL(new Blob([recovery], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url; link.download = 'expense-tracker-before-restore.json'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    window.addEventListener('online', () => {
+      showDriveTestFeedback('success', 'Back online. Connect Google Drive if needed, then upload pending receipts or back up expenses.');
+      render();
+    });
+    window.addEventListener('offline', render);
   }
 
-  // Initialize application
   bindEvents();
   render();
 })(window.App);
